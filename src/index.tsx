@@ -12,6 +12,7 @@ import { render } from 'ink';
 import { App } from './ui/App.js';
 import { appStore } from './store/app.js';
 import { TelegramCore, loadConfig, type TelegramConfig } from './core/telegram.js';
+import { writeSessionString } from './core/session.js';
 import { sortChats } from './display/format.js';
 
 async function main() {
@@ -26,6 +27,16 @@ async function main() {
 
   const store = appStore;
 
+  // Persist the authorisation key after a successful login so the next launch
+  // reuses it (read back via loadConfig → readSessionString).
+  function persistSession(c: TelegramCore): void {
+    try {
+      writeSessionString(c.getSessionString());
+    } catch {
+      /* non-fatal: we just won't auto-login next time */
+    }
+  }
+
   // Lazy core — created on first auth attempt so the UI renders immediately.
   let core: TelegramCore | null = null as TelegramCore | null;
 
@@ -38,6 +49,7 @@ async function main() {
 
       // If we already have a saved session, skip auth
       if (await core.isAuthorized()) {
+        persistSession(core); // mirror env/session into the on-disk file
         store.getState().setAuthPhase('ready');
         await loadChats();
       }
@@ -69,6 +81,7 @@ async function main() {
       const c = await ensureCore();
       const { phoneNumber, phoneCodeHash } = store.getState();
       await c.signIn(phoneNumber!, phoneCodeHash!, code);
+      persistSession(c);
       store.getState().setAuthPhase('ready');
       await loadChats();
     } catch (err) {
@@ -89,6 +102,7 @@ async function main() {
     try {
       const c = await ensureCore();
       await c.signInWithPassword(password);
+      persistSession(c);
       store.getState().setAuthPhase('ready');
       await loadChats();
     } catch (err) {

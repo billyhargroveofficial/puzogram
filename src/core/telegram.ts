@@ -6,6 +6,7 @@ import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import { LogLevel } from 'telegram/extensions/Logger.js';
 import type { DisplayChat, DisplayMessage, DisplayFolder } from '../display/format.js';
+import { readSessionString } from './session.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -25,7 +26,7 @@ export function loadConfig(): TelegramConfig {
       'Set TG_API_ID and TG_API_HASH env vars (get them at https://my.telegram.org)',
     );
   }
-  return { apiId, apiHash, session: process.env.TG_SESSION };
+  return { apiId, apiHash, session: process.env.TG_SESSION ?? readSessionString() };
 }
 
 // ---------------------------------------------------------------------------
