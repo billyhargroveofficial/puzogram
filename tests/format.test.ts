@@ -8,8 +8,13 @@ import {
   sortChats,
   formatChatTitle,
   formatChatPreview,
+  getInitials,
+  avatarColor,
+  filterChatsByFolder,
+  folderUnreadCount,
   type DisplayMessage,
   type DisplayChat,
+  type DisplayFolder,
 } from '../src/display/format.js';
 
 // Fixed "now" for deterministic tests: Monday 14 July 2026, 15:30
@@ -35,18 +40,17 @@ describe('formatTimestamp', () => {
   });
 
   it('shows weekday name for < 7 days ago', () => {
-    // 10 July 2026 is a Friday (6 days before Tue 14 July)
     const d = new Date(2026, 6, 10, 12, 0);
     expect(formatTimestamp(d, NOW)).toBe('Fri');
   });
 
   it('shows "DD Mon" for same year, > 7 days', () => {
-    const d = new Date(2026, 0, 3, 12, 0); // 3 Jan 2026
+    const d = new Date(2026, 0, 3, 12, 0);
     expect(formatTimestamp(d, NOW)).toBe('03 Jan');
   });
 
   it('shows "DD Mon YYYY" for a different year', () => {
-    const d = new Date(2025, 11, 25, 8, 0); // 25 Dec 2025
+    const d = new Date(2025, 11, 25, 8, 0);
     expect(formatTimestamp(d, NOW)).toBe('25 Dec 2025');
   });
 });
@@ -66,7 +70,7 @@ describe('formatChatTimestamp', () => {
   });
 
   it('shows DD/MM for same year', () => {
-    const d = new Date(2026, 2, 5, 10, 0); // 5 Mar
+    const d = new Date(2026, 2, 5, 10, 0);
     expect(formatChatTimestamp(d, NOW)).toBe('05/03');
   });
 
@@ -187,31 +191,19 @@ describe('formatMessage', () => {
 describe('sortChats', () => {
   const chats: DisplayChat[] = [
     {
-      id: 1,
-      title: 'Old',
-      lastMessageText: 'old msg',
-      lastMessageDate: new Date(2026, 0, 1),
-      unreadCount: 0,
-      isChannel: false,
-      isGroup: false,
+      id: 1, title: 'Old', lastMessageText: 'old msg',
+      lastMessageDate: new Date(2026, 0, 1), unreadCount: 0,
+      isChannel: false, isGroup: false,
     },
     {
-      id: 2,
-      title: 'New',
-      lastMessageText: 'new msg',
-      lastMessageDate: new Date(2026, 6, 14),
-      unreadCount: 3,
-      isChannel: false,
-      isGroup: true,
+      id: 2, title: 'New', lastMessageText: 'new msg',
+      lastMessageDate: new Date(2026, 6, 14), unreadCount: 3,
+      isChannel: false, isGroup: true,
     },
     {
-      id: 3,
-      title: 'Mid',
-      lastMessageText: 'mid msg',
-      lastMessageDate: new Date(2026, 3, 1),
-      unreadCount: 0,
-      isChannel: true,
-      isGroup: false,
+      id: 3, title: 'Mid', lastMessageText: 'mid msg',
+      lastMessageDate: new Date(2026, 3, 1), unreadCount: 0,
+      isChannel: true, isGroup: false,
     },
   ];
 
@@ -233,13 +225,9 @@ describe('sortChats', () => {
 describe('formatChatTitle', () => {
   it('shows group prefix and unread count', () => {
     const chat: DisplayChat = {
-      id: 1,
-      title: 'Dev Team',
-      lastMessageText: '',
-      lastMessageDate: new Date(),
-      unreadCount: 5,
-      isChannel: false,
-      isGroup: true,
+      id: 1, title: 'Dev Team', lastMessageText: '',
+      lastMessageDate: new Date(), unreadCount: 5,
+      isChannel: false, isGroup: true,
     };
     const result = formatChatTitle(chat, 30);
     expect(result).toContain('👥');
@@ -249,26 +237,18 @@ describe('formatChatTitle', () => {
 
   it('shows channel prefix', () => {
     const chat: DisplayChat = {
-      id: 2,
-      title: 'News',
-      lastMessageText: '',
-      lastMessageDate: new Date(),
-      unreadCount: 0,
-      isChannel: true,
-      isGroup: false,
+      id: 2, title: 'News', lastMessageText: '',
+      lastMessageDate: new Date(), unreadCount: 0,
+      isChannel: true, isGroup: false,
     };
     expect(formatChatTitle(chat, 30)).toContain('📢');
   });
 
   it('truncates long titles', () => {
     const chat: DisplayChat = {
-      id: 3,
-      title: 'A Very Long Chat Title That Goes On Forever',
-      lastMessageText: '',
-      lastMessageDate: new Date(),
-      unreadCount: 0,
-      isChannel: false,
-      isGroup: false,
+      id: 3, title: 'A Very Long Chat Title That Goes On Forever',
+      lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0,
+      isChannel: false, isGroup: false,
     };
     const result = formatChatTitle(chat, 15);
     expect(Array.from(result).length).toBeLessThanOrEqual(15);
@@ -282,16 +262,133 @@ describe('formatChatTitle', () => {
 describe('formatChatPreview', () => {
   it('replaces newlines with spaces and truncates', () => {
     const chat: DisplayChat = {
-      id: 1,
-      title: 'Test',
+      id: 1, title: 'Test',
       lastMessageText: 'line one\nline two\nline three',
-      lastMessageDate: new Date(),
-      unreadCount: 0,
-      isChannel: false,
-      isGroup: false,
+      lastMessageDate: new Date(), unreadCount: 0,
+      isChannel: false, isGroup: false,
     };
     const result = formatChatPreview(chat, 20);
     expect(result).not.toContain('\n');
     expect(Array.from(result).length).toBeLessThanOrEqual(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getInitials
+// ---------------------------------------------------------------------------
+describe('getInitials', () => {
+  it('single word → first 2 chars', () => {
+    expect(getInitials('Alice')).toBe('AL');
+  });
+
+  it('two words → first char of each', () => {
+    expect(getInitials('Dev Team')).toBe('DT');
+  });
+
+  it('strips emoji', () => {
+    expect(getInitials('🌟 Star Chat')).toBe('SC');
+  });
+
+  it('empty string → ?', () => {
+    expect(getInitials('')).toBe('?');
+  });
+
+  it('single char', () => {
+    expect(getInitials('A')).toBe('A');
+  });
+
+  it('cyrillic', () => {
+    expect(getInitials('Два майора')).toBe('ДМ');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// avatarColor
+// ---------------------------------------------------------------------------
+describe('avatarColor', () => {
+  it('returns a valid color string', () => {
+    const validColors = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'];
+    for (let i = 0; i < 20; i++) {
+      expect(validColors).toContain(avatarColor(i));
+    }
+  });
+
+  it('is deterministic', () => {
+    expect(avatarColor(42)).toBe(avatarColor(42));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterChatsByFolder
+// ---------------------------------------------------------------------------
+describe('filterChatsByFolder', () => {
+  const chats: DisplayChat[] = [
+    { id: 1, title: 'Alice', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0, isChannel: false, isGroup: false, isContact: true },
+    { id: 2, title: 'Dev Team', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0, isChannel: false, isGroup: true },
+    { id: 3, title: 'News', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0, isChannel: true, isGroup: false },
+    { id: 4, title: 'Bot', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0, isChannel: false, isGroup: false, isBot: true },
+    { id: 5, title: 'Stranger', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0, isChannel: false, isGroup: false },
+  ];
+
+  const allFolder: DisplayFolder = {
+    id: 0, title: 'All', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+    contacts: true, nonContacts: true, groups: true, broadcasts: true, bots: true,
+  };
+
+  it('"All" folder returns everything', () => {
+    expect(filterChatsByFolder(chats, allFolder)).toHaveLength(5);
+  });
+
+  it('groups-only folder', () => {
+    const folder: DisplayFolder = {
+      id: 1, title: 'Groups', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+      contacts: false, nonContacts: false, groups: true, broadcasts: false, bots: false,
+    };
+    const result = filterChatsByFolder(chats, folder);
+    expect(result.map((c) => c.title)).toEqual(['Dev Team']);
+  });
+
+  it('includeChatIds overrides flags', () => {
+    const folder: DisplayFolder = {
+      id: 2, title: 'Custom', pinnedChatIds: [], includeChatIds: [1, 3], excludeChatIds: [],
+      contacts: false, nonContacts: false, groups: false, broadcasts: false, bots: false,
+    };
+    const result = filterChatsByFolder(chats, folder);
+    expect(result.map((c) => c.id).sort()).toEqual([1, 3]);
+  });
+
+  it('excludeChatIds removes chats', () => {
+    const folder: DisplayFolder = {
+      id: 3, title: 'No Bot', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [4],
+      contacts: true, nonContacts: true, groups: true, broadcasts: true, bots: true,
+    };
+    const result = filterChatsByFolder(chats, folder);
+    expect(result.find((c) => c.id === 4)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// folderUnreadCount
+// ---------------------------------------------------------------------------
+describe('folderUnreadCount', () => {
+  const chats: DisplayChat[] = [
+    { id: 1, title: 'A', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 3, isChannel: false, isGroup: false, isContact: true },
+    { id: 2, title: 'B', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 5, isChannel: false, isGroup: true },
+  ];
+
+  it('sums unread for matching chats', () => {
+    const folder: DisplayFolder = {
+      id: 1, title: 'All', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+      contacts: true, nonContacts: true, groups: true, broadcasts: true, bots: true,
+    };
+    expect(folderUnreadCount(chats, folder)).toBe(8);
+  });
+
+  it('returns 0 for empty filter', () => {
+    const folder: DisplayFolder = {
+      id: 2, title: 'Empty', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+      contacts: false, nonContacts: false, groups: false, broadcasts: false, bots: false,
+    };
+    expect(folderUnreadCount(chats, folder)).toBe(0);
   });
 });

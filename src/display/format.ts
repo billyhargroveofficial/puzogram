@@ -23,6 +23,22 @@ export interface DisplayChat {
   unreadCount: number;
   isChannel: boolean;
   isGroup: boolean;
+  isBot?: boolean;
+  isContact?: boolean;
+}
+
+export interface DisplayFolder {
+  id: number;
+  title: string;
+  emoji?: string;
+  pinnedChatIds: number[];
+  includeChatIds: number[];
+  excludeChatIds: number[];
+  contacts: boolean;
+  nonContacts: boolean;
+  groups: boolean;
+  broadcasts: boolean;
+  bots: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,4 +219,65 @@ export function formatChatTitle(chat: DisplayChat, width: number): string {
  */
 export function formatChatPreview(chat: DisplayChat, width: number): string {
   return truncateText(chat.lastMessageText.replace(/\n/g, ' '), width);
+}
+
+// ---------------------------------------------------------------------------
+// Avatar initials
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract 1-2 character initials from a chat title for a text avatar.
+ * Examples: "Alice" → "A", "Dev Team" → "DT", " News" → "N"
+ */
+export function getInitials(title: string): string {
+  // Strip emoji and special chars
+  const cleaned = title.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').trim();
+  if (!cleaned) return title.slice(0, 1) || '?';
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+/**
+ * Deterministic color for an avatar based on the chat id.
+ */
+const AVATAR_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'] as const;
+export function avatarColor(id: number): (typeof AVATAR_COLORS)[number] {
+  return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
+}
+
+// ---------------------------------------------------------------------------
+// Folder filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter chats by a folder definition.
+ * Folder id=0 means "All" — return everything.
+ */
+export function filterChatsByFolder(chats: DisplayChat[], folder: DisplayFolder): DisplayChat[] {
+  if (folder.id === 0) return chats;
+
+  const includeSet = new Set(folder.includeChatIds);
+  const excludeSet = new Set(folder.excludeChatIds);
+
+  return chats.filter((chat) => {
+    if (excludeSet.has(chat.id)) return false;
+    if (includeSet.has(chat.id)) return true;
+
+    // Flag-based matching
+    if (folder.contacts && chat.isContact) return true;
+    if (folder.nonContacts && !chat.isContact && !chat.isBot) return true;
+    if (folder.groups && chat.isGroup) return true;
+    if (folder.broadcasts && chat.isChannel) return true;
+    if (folder.bots && chat.isBot) return true;
+
+    return false;
+  });
+}
+
+/**
+ * Compute total unread count for a folder.
+ */
+export function folderUnreadCount(chats: DisplayChat[], folder: DisplayFolder): number {
+  return filterChatsByFolder(chats, folder).reduce((sum, c) => sum + c.unreadCount, 0);
 }

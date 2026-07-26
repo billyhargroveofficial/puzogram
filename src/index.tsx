@@ -103,8 +103,12 @@ async function main() {
     if (!core) return;
     store.getState().setChatsLoading(true);
     try {
-      const chats = await core.getDialogs(50);
+      const [chats, folders] = await Promise.all([
+        core.getDialogs(100),
+        core.getDialogFilters(),
+      ]);
       store.getState().setChats(sortChats(chats));
+      store.getState().setFolders(folders);
     } catch (err) {
       store.getState().setStatusMessage(`Failed to load chats: ${(err as Error).message}`);
     } finally {

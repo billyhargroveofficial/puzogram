@@ -10,7 +10,7 @@ import { MessageList } from '../src/ui/MessageList.js';
 import { MessageInput } from '../src/ui/MessageInput.js';
 import { AuthScreen } from '../src/ui/AuthScreen.js';
 import { appStore } from '../src/store/app.js';
-import type { DisplayChat, DisplayMessage } from '../src/display/format.js';
+import type { DisplayChat, DisplayMessage, DisplayFolder } from '../src/display/format.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -18,55 +18,49 @@ import type { DisplayChat, DisplayMessage } from '../src/display/format.js';
 
 const FIXTURE_CHATS: DisplayChat[] = [
   {
-    id: 1,
-    title: 'Alice',
-    lastMessageText: 'Hey there!',
-    lastMessageDate: new Date(2026, 6, 14, 10, 0),
-    unreadCount: 2,
-    isChannel: false,
-    isGroup: false,
+    id: 1, title: 'Alice', lastMessageText: 'Hey there!',
+    lastMessageDate: new Date(2026, 6, 14, 10, 0), unreadCount: 2,
+    isChannel: false, isGroup: false, isContact: true,
   },
   {
-    id: 2,
-    title: 'Dev Team',
-    lastMessageText: 'Build passed ✅',
-    lastMessageDate: new Date(2026, 6, 14, 9, 30),
-    unreadCount: 0,
-    isChannel: false,
-    isGroup: true,
+    id: 2, title: 'Dev Team', lastMessageText: 'Build passed ✅',
+    lastMessageDate: new Date(2026, 6, 14, 9, 30), unreadCount: 0,
+    isChannel: false, isGroup: true,
   },
   {
-    id: 3,
-    title: 'Telegram News',
-    lastMessageText: 'New update released',
-    lastMessageDate: new Date(2026, 6, 13, 18, 0),
-    unreadCount: 5,
-    isChannel: true,
-    isGroup: false,
+    id: 3, title: 'Telegram News', lastMessageText: 'New update released',
+    lastMessageDate: new Date(2026, 6, 13, 18, 0), unreadCount: 5,
+    isChannel: true, isGroup: false,
+  },
+];
+
+const FIXTURE_FOLDERS: DisplayFolder[] = [
+  {
+    id: 0, title: 'All', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+    contacts: true, nonContacts: true, groups: true, broadcasts: true, bots: true,
+  },
+  {
+    id: 1, title: 'Personal', pinnedChatIds: [], includeChatIds: [1], excludeChatIds: [],
+    contacts: true, nonContacts: false, groups: false, broadcasts: false, bots: false,
+  },
+  {
+    id: 2, title: 'work', pinnedChatIds: [], includeChatIds: [2], excludeChatIds: [],
+    contacts: false, nonContacts: false, groups: true, broadcasts: false, bots: false,
   },
 ];
 
 const FIXTURE_MESSAGES: DisplayMessage[] = [
   {
-    id: 101,
-    senderName: 'Alice',
-    text: 'Hello! How are you?',
-    date: new Date(2026, 6, 14, 10, 0),
-    isOutgoing: false,
+    id: 101, senderName: 'Alice', text: 'Hello! How are you?',
+    date: new Date(2026, 6, 14, 10, 0), isOutgoing: false,
   },
   {
-    id: 102,
-    senderName: 'Me',
-    text: 'I am fine, thanks!',
-    date: new Date(2026, 6, 14, 10, 1),
-    isOutgoing: true,
+    id: 102, senderName: 'Me', text: 'I am fine, thanks!',
+    date: new Date(2026, 6, 14, 10, 1), isOutgoing: true,
   },
   {
-    id: 103,
-    senderName: 'Alice',
-    text: 'Great to hear that. See you tomorrow!',
-    date: new Date(2026, 6, 14, 10, 2),
-    isOutgoing: false,
+    id: 103, senderName: 'Alice', text: 'Great to hear that. See you tomorrow!',
+    date: new Date(2026, 6, 14, 10, 2), isOutgoing: false,
   },
 ];
 
@@ -80,6 +74,8 @@ beforeEach(() => {
     authError: null,
     phoneNumber: '',
     phoneCodeHash: null,
+    folders: [],
+    selectedFolderIndex: 0,
     chats: [],
     selectedChatIndex: 0,
     chatsLoading: false,
@@ -100,9 +96,11 @@ describe('ChatList', () => {
     const { lastFrame } = render(
       <ChatList
         chats={FIXTURE_CHATS}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={0}
         selectedIndex={0}
         width={30}
-        height={10}
+        height={15}
         focused={true}
       />,
     );
@@ -112,35 +110,99 @@ describe('ChatList', () => {
     expect(output).toContain('Telegram News');
   });
 
-  it('shows unread counts', () => {
+  it('shows folder tabs', () => {
     const { lastFrame } = render(
       <ChatList
         chats={FIXTURE_CHATS}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={0}
         selectedIndex={0}
         width={30}
-        height={10}
+        height={15}
         focused={true}
       />,
     );
     const output = lastFrame()!;
-    expect(output).toContain('(2)');
-    expect(output).toContain('(5)');
+    expect(output).toContain('All');
+    expect(output).toContain('Personal');
+    expect(output).toContain('work');
   });
 
-  it('shows "No chats yet" when empty', () => {
+  it('shows initials avatars', () => {
     const { lastFrame } = render(
-      <ChatList chats={[]} selectedIndex={0} width={30} height={10} focused={false} />,
+      <ChatList
+        chats={FIXTURE_CHATS}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={0}
+        selectedIndex={0}
+        width={30}
+        height={15}
+        focused={true}
+      />,
     );
-    expect(lastFrame()!).toContain('No chats yet');
+    const output = lastFrame()!;
+    expect(output).toContain('AL'); // Alice
+    expect(output).toContain('DT'); // Dev Team
+  });
+
+  it('shows unread badge', () => {
+    const { lastFrame } = render(
+      <ChatList
+        chats={FIXTURE_CHATS}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={0}
+        selectedIndex={0}
+        width={30}
+        height={15}
+        focused={true}
+      />,
+    );
+    const output = lastFrame()!;
+    expect(output).toContain('2');
+    expect(output).toContain('5');
+  });
+
+  it('filters by folder', () => {
+    const { lastFrame } = render(
+      <ChatList
+        chats={FIXTURE_CHATS}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={2} // "work" folder → only groups
+        selectedIndex={0}
+        width={30}
+        height={15}
+        focused={true}
+      />,
+    );
+    const output = lastFrame()!;
+    expect(output).toContain('Dev Team');
+    expect(output).not.toContain('Alice');
+  });
+
+  it('shows "No chats" when empty', () => {
+    const { lastFrame } = render(
+      <ChatList
+        chats={[]}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={0}
+        selectedIndex={0}
+        width={30}
+        height={15}
+        focused={false}
+      />,
+    );
+    expect(lastFrame()!).toContain('No chats');
   });
 
   it('renders the Chats header', () => {
     const { lastFrame } = render(
       <ChatList
         chats={FIXTURE_CHATS}
+        folders={FIXTURE_FOLDERS}
+        selectedFolderIndex={0}
         selectedIndex={0}
         width={30}
-        height={10}
+        height={15}
         focused={true}
       />,
     );
@@ -158,6 +220,7 @@ describe('MessageList', () => {
       <MessageList
         messages={FIXTURE_MESSAGES}
         chatTitle="Alice"
+        chatType="private"
         width={60}
         height={20}
         loading={false}
@@ -175,6 +238,7 @@ describe('MessageList', () => {
       <MessageList
         messages={FIXTURE_MESSAGES}
         chatTitle="Alice"
+        chatType="private"
         width={60}
         height={20}
         loading={false}
@@ -182,6 +246,21 @@ describe('MessageList', () => {
       />,
     );
     expect(lastFrame()!).toContain('Alice');
+  });
+
+  it('shows chat type', () => {
+    const { lastFrame } = render(
+      <MessageList
+        messages={FIXTURE_MESSAGES}
+        chatTitle="Dev Team"
+        chatType="group"
+        width={60}
+        height={20}
+        loading={false}
+        focused={true}
+      />,
+    );
+    expect(lastFrame()!).toContain('group');
   });
 
   it('shows placeholder when no messages', () => {

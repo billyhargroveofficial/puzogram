@@ -5,7 +5,7 @@
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import { LogLevel } from 'telegram/extensions/Logger.js';
-import type { DisplayChat, DisplayMessage } from '../display/format.js';
+import type { DisplayChat, DisplayMessage, DisplayFolder } from '../display/format.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -119,6 +119,8 @@ export class TelegramCore {
       const lastName: string = anyEntity.lastName ?? '';
       const personName = [firstName, lastName].filter(Boolean).join(' ');
       const title: string = anyEntity.title ?? (personName || 'Unknown');
+      const isBot: boolean = anyEntity.bot === true;
+      const isContact: boolean = anyEntity.contact === true || anyEntity.mutualContact === true;
 
       const lastMsg = d.message;
       return {
@@ -131,6 +133,8 @@ export class TelegramCore {
         isGroup:
           entity!.className === 'Chat' ||
           (entity!.className === 'Channel' && anyEntity.megagroup === true),
+        isBot,
+        isContact,
       } satisfies DisplayChat;
     });
   }
@@ -165,6 +169,47 @@ export class TelegramCore {
   async sendMessage(entityId: number, text: string): Promise<void> {
     const entity = await this.client.getEntity(entityId);
     await this.client.sendMessage(entity, { message: text });
+  }
+
+  /** Fetch chat folders (dialog filters). */
+  async getDialogFilters(): Promise<DisplayFolder[]> {
+    const result = await this.client.invoke(new Api.messages.GetDialogFilters());
+    const filters = (result as any).filters ?? [];
+    const out: DisplayFolder[] = [];
+    for (const f of filters) {
+      if (f.className === 'DialogFilterDefault') {
+        // The built-in "All" folder
+        out.push({
+          id: 0,
+          title: 'All',
+          emoji: undefined,
+          pinnedChatIds: [],
+          includeChatIds: [],
+          excludeChatIds: [],
+          contacts: true,
+          nonContacts: true,
+          groups: true,
+          broadcasts: true,
+          bots: true,
+        });
+        continue;
+      }
+      const df = f as any;
+      out.push({
+        id: df.id ?? 0,
+        title: df.title ?? 'Folder',
+        emoji: df.emoticon ?? undefined,
+        pinnedChatIds: (df.pinnedPeers ?? []).map((p: any) => Number(p.channelId ?? p.chatId ?? p.userId ?? 0)),
+        includeChatIds: (df.includePeers ?? []).map((p: any) => Number(p.channelId ?? p.chatId ?? p.userId ?? 0)),
+        excludeChatIds: (df.excludePeers ?? []).map((p: any) => Number(p.channelId ?? p.chatId ?? p.userId ?? 0)),
+        contacts: df.contacts ?? false,
+        nonContacts: df.nonContacts ?? false,
+        groups: df.groups ?? false,
+        broadcasts: df.broadcasts ?? false,
+        bots: df.bots ?? false,
+      });
+    }
+    return out;
   }
 
   /** Disconnect gracefully. */

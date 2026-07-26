@@ -4,7 +4,7 @@
 import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import type { AuthPhase } from '../core/telegram.js';
-import type { DisplayChat, DisplayMessage } from '../display/format.js';
+import type { DisplayChat, DisplayMessage, DisplayFolder } from '../display/format.js';
 
 // ---------------------------------------------------------------------------
 // State shape
@@ -16,6 +16,10 @@ export interface AppState {
   authError: string | null;
   phoneNumber: string;
   phoneCodeHash: string | null;
+
+  // Folders
+  folders: DisplayFolder[];
+  selectedFolderIndex: number;
 
   // Chats
   chats: DisplayChat[];
@@ -38,6 +42,8 @@ export interface AppState {
   setAuthError: (error: string | null) => void;
   setPhoneNumber: (phone: string) => void;
   setPhoneCodeHash: (hash: string | null) => void;
+  setFolders: (folders: DisplayFolder[]) => void;
+  setSelectedFolderIndex: (index: number) => void;
   setChats: (chats: DisplayChat[]) => void;
   setSelectedChatIndex: (index: number) => void;
   setChatsLoading: (loading: boolean) => void;
@@ -58,6 +64,9 @@ export const appStore = createStore<AppState>((set) => ({
   phoneNumber: '',
   phoneCodeHash: null,
 
+  folders: [],
+  selectedFolderIndex: 0,
+
   chats: [],
   selectedChatIndex: 0,
   chatsLoading: false,
@@ -74,6 +83,8 @@ export const appStore = createStore<AppState>((set) => ({
   setAuthError: (error) => set({ authError: error }),
   setPhoneNumber: (phone) => set({ phoneNumber: phone }),
   setPhoneCodeHash: (hash) => set({ phoneCodeHash: hash }),
+  setFolders: (folders) => set({ folders }),
+  setSelectedFolderIndex: (index) => set({ selectedFolderIndex: index }),
   setChats: (chats) => set({ chats }),
   setSelectedChatIndex: (index) => set({ selectedChatIndex: index }),
   setChatsLoading: (loading) => set({ chatsLoading: loading }),
