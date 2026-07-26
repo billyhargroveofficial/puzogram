@@ -149,6 +149,9 @@ async function main() {
   }
 
   // ---- Render immediately (auth screen shows while disconnected) ----
+  // alternateScreen gives a clean full-screen canvas whose top-left is
+  // (0,0), so mouse coordinates line up with measureElement() layout
+  // coordinates for hit-testing.
   const { waitUntilExit } = render(
     <App
       onSendCode={handleSendCode}
@@ -161,6 +164,7 @@ async function main() {
         void handleSendMessage(text);
       }}
     />,
+    { alternateScreen: true },
   );
 
   await waitUntilExit();

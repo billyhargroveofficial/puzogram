@@ -29,6 +29,7 @@ export interface AppState {
   // Messages
   messages: DisplayMessage[];
   messagesLoading: boolean;
+  messagesScrollOffset: number;
 
   // Input
   inputText: string;
@@ -49,6 +50,7 @@ export interface AppState {
   setChatsLoading: (loading: boolean) => void;
   setMessages: (messages: DisplayMessage[]) => void;
   setMessagesLoading: (loading: boolean) => void;
+  setMessagesScrollOffset: (offset: number) => void;
   setInputText: (text: string) => void;
   setFocusedPane: (pane: AppState['focusedPane']) => void;
   setStatusMessage: (msg: string | null) => void;
@@ -73,6 +75,7 @@ export const appStore = createStore<AppState>((set) => ({
 
   messages: [],
   messagesLoading: false,
+  messagesScrollOffset: 0,
 
   inputText: '',
 
@@ -90,6 +93,7 @@ export const appStore = createStore<AppState>((set) => ({
   setChatsLoading: (loading) => set({ chatsLoading: loading }),
   setMessages: (messages) => set({ messages }),
   setMessagesLoading: (loading) => set({ messagesLoading: loading }),
+  setMessagesScrollOffset: (offset) => set({ messagesScrollOffset: offset }),
   setInputText: (text) => set({ inputText: text }),
   setFocusedPane: (pane) => set({ focusedPane: pane }),
   setStatusMessage: (msg) => set({ statusMessage: msg }),
