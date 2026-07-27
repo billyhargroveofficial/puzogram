@@ -16,6 +16,14 @@ interface MessageInputProps {
   onFocusPane?: () => void;
 }
 
+/**
+ * SGR mouse escape fragments. The mouse library only *listens* on stdin — the
+ * sequences still reach Ink's input parser, which strips just the leading ESC
+ * and hands us literal junk like "[<0;85;33M" (or a batched motion blob).
+ * Strip those fragments so clicks/wheel/movement never type into the field.
+ */
+const MOUSE_SEQ_RE = /\x1b?\[<\d+;\d+;\d+[Mm]/g;
+
 export function MessageInput({
   value,
   onChange,
@@ -56,7 +64,8 @@ export function MessageInput({
       }
 
       if (input && !key.ctrl && !key.meta) {
-        onChange(value + input);
+        const clean = input.replace(MOUSE_SEQ_RE, '');
+        if (clean) onChange(value + clean);
       }
     },
     { isActive: focused },

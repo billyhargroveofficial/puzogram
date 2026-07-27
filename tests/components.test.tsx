@@ -347,6 +347,25 @@ describe('MessageInput', () => {
     );
     expect(lastFrame()!).toContain('Tab to focus');
   });
+
+  it('ignores SGR mouse escape sequences instead of typing them', () => {
+    const changes: string[] = [];
+    const { stdin } = render(
+      withMouse(
+        <MessageInput value="" onChange={(t) => changes.push(t)} onSubmit={noop} focused={true} />,
+      ),
+    );
+    // Click press+release, motion flood and a wheel event — none may type.
+    stdin.write('\x1b[<0;10;5M');
+    stdin.write('\x1b[<0;10;5m');
+    stdin.write('\x1b[<35;11;5M\x1b[<35;12;5M\x1b[<35;13;5M');
+    stdin.write('\x1b[<64;10;5M');
+    expect(changes).toEqual([]);
+
+    // A motion fragment mixed with real text keeps only the text.
+    stdin.write('\x1b[<35;14;5Mok');
+    expect(changes).toEqual(['ok']);
+  });
 });
 
 // ---------------------------------------------------------------------------
