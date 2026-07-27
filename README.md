@@ -2,6 +2,12 @@
 
 Terminal Telegram client — React Ink UI + GramJS MTProto. Catppuccin Mocha theme, chat folders, archive tab, mouse support.
 
+![Main view](docs/screenshots/main.png)
+
+![Personal folder + draft](docs/screenshots/personal.png)
+
+![Archive tab](docs/screenshots/archive.png)
+
 ## Run
 
 ```sh
