@@ -5,6 +5,7 @@
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import { LogLevel } from 'telegram/extensions/Logger.js';
+import { toText } from '../display/format.js';
 import type { DisplayChat, DisplayMessage, DisplayFolder } from '../display/format.js';
 import { readSessionString } from './session.js';
 
@@ -40,6 +41,40 @@ export interface AuthState {
   phoneCodeHash?: string;
   phoneNumber?: string;
   error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Media labels
+// ---------------------------------------------------------------------------
+
+/**
+ * Human-readable label for a message's media attachment, used as the bubble
+ * text when the message has no caption (otherwise media messages would render
+ * as empty bubbles). GramJS exposes type getters (photo/video/voice/…) on the
+ * Message; we map them to a short localized label.
+ */
+function mediaLabel(m: any): string {
+  try {
+    if (!m.media) return '';
+    if (m.photo) return '🖼 Фото';
+    if (m.video) return '🎥 Видео';
+    if (m.gif) return '🎞 GIF';
+    if (m.voice) return '🎤 Голосовое';
+    if (m.audio) return '🎵 Аудио';
+    if (m.sticker) {
+      const e = m.sticker?.emoji ?? '';
+      return e ? `${e} Стикер` : 'Стикер';
+    }
+    if (m.document) return '📎 Файл';
+    const cn = m.media?.className ?? '';
+    if (cn.includes('WebPage')) return '🔗 Ссылка';
+    if (cn.includes('Geo') || cn.includes('Venue')) return '📍 Геолокация';
+    if (cn.includes('Contact')) return '👤 Контакт';
+    if (cn.includes('Poll')) return '📊 Опрос';
+    return '📎 Медиа';
+  } catch {
+    return '📎 Медиа';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -116,18 +151,21 @@ export class TelegramCore {
     return dialogs.map((d) => {
       const entity = d.entity;
       const anyEntity = entity as any;
-      const firstName: string = anyEntity.firstName ?? '';
-      const lastName: string = anyEntity.lastName ?? '';
+      const firstName = toText(anyEntity.firstName);
+      const lastName = toText(anyEntity.lastName);
       const personName = [firstName, lastName].filter(Boolean).join(' ');
-      const title: string = anyEntity.title ?? (personName || 'Unknown');
+      const title = toText(anyEntity.title) || personName || 'Unknown';
       const isBot: boolean = anyEntity.bot === true;
       const isContact: boolean = anyEntity.contact === true || anyEntity.mutualContact === true;
 
-      const lastMsg = d.message;
+      const lastMsg = d.message as any;
       return {
-        id: Number(entity!.id),
+        // GramJS dialog ids are marked: users stay positive, basic groups are
+        // negative and channels use the -100 prefix. Folder peers use the same
+        // representation, which avoids both type collisions and wrong matches.
+        id: Number(d.id!.toString()),
         title,
-        lastMessageText: lastMsg?.message ?? '',
+        lastMessageText: toText(lastMsg?.message),
         lastMessageDate: lastMsg?.date ? new Date(lastMsg.date * 1000) : new Date(0),
         unreadCount: d.unreadCount ?? 0,
         isChannel: entity!.className === 'Channel' && anyEntity.megagroup !== true,
@@ -136,6 +174,7 @@ export class TelegramCore {
           (entity!.className === 'Channel' && anyEntity.megagroup === true),
         isBot,
         isContact,
+        isArchived: d.archived === true || d.dialog?.folderId === 1,
       } satisfies DisplayChat;
     });
   }
@@ -145,20 +184,24 @@ export class TelegramCore {
     const entity = await this.client.getEntity(entityId);
     const messages = await this.client.getMessages(entity, { limit });
     return messages
-      .filter((m) => m.message !== undefined)
+      .filter((m) => toText(m.message) !== '' || m.media)
       .map((m) => {
         const sender = m.sender as any;
         let senderName = 'Unknown';
+        let senderId = 0;
         if (sender) {
-          const firstName: string = sender.firstName ?? '';
-          const lastName: string = sender.lastName ?? '';
+          const firstName = toText(sender.firstName);
+          const lastName = toText(sender.lastName);
           const personName = [firstName, lastName].filter(Boolean).join(' ');
-          senderName = sender.title ?? (personName || 'Unknown');
+          senderName = toText(sender.title) || personName || 'Unknown';
+          senderId = Number(sender.id ?? 0) || 0;
         }
         return {
           id: m.id,
+          senderId,
           senderName,
-          text: m.message ?? '',
+          // Caption text, or a media placeholder when there's no caption.
+          text: toText(m.message) || mediaLabel(m),
           date: new Date(m.date * 1000),
           isOutgoing: m.out ?? false,
         } satisfies DisplayMessage;
@@ -172,43 +215,69 @@ export class TelegramCore {
     await this.client.sendMessage(entity, { message: text });
   }
 
-  /** Fetch chat folders (dialog filters). */
+  /** Fetch chat folders (dialog filters).
+   *
+   *  Always returns a built-in "All" folder first (id 0) so there is always a
+   *  working view of every chat, even if the account has no custom folders or
+   *  the GetDialogFilters call fails. Custom folders follow.
+   */
   async getDialogFilters(): Promise<DisplayFolder[]> {
-    const result = await this.client.invoke(new Api.messages.GetDialogFilters());
-    const filters = (result as any).filters ?? [];
-    const out: DisplayFolder[] = [];
-    for (const f of filters) {
-      if (f.className === 'DialogFilterDefault') {
-        // The built-in "All" folder
+    const all: DisplayFolder = {
+      id: 0,
+      title: 'All',
+      emoji: undefined,
+      pinnedChatIds: [],
+      includeChatIds: [],
+      excludeChatIds: [],
+      contacts: true,
+      nonContacts: true,
+      groups: true,
+      broadcasts: true,
+      bots: true,
+    };
+    const out: DisplayFolder[] = [all];
+
+    try {
+      const result = await this.client.invoke(new Api.messages.GetDialogFilters());
+      const filters = (result as any).filters ?? [];
+      for (const f of filters) {
+        // The server's own "All" (DialogFilterDefault) is redundant with ours.
+        if (f.className === 'DialogFilterDefault') continue;
+        const df = f as any;
+        const peerIds = async (peers: Api.TypeInputPeer[] | undefined): Promise<number[]> => {
+          const ids = await Promise.all(
+            (peers ?? []).map(async (peer) => {
+              try {
+                const id = Number(await this.client.getPeerId(peer));
+                return Number.isSafeInteger(id) ? id : null;
+              } catch {
+                return null;
+              }
+            }),
+          );
+          return ids.filter((id): id is number => id !== null);
+        };
+        const [pinnedChatIds, includeChatIds, excludeChatIds] = await Promise.all([
+          peerIds(df.pinnedPeers),
+          peerIds(df.includePeers),
+          peerIds(df.excludePeers),
+        ]);
         out.push({
-          id: 0,
-          title: 'All',
-          emoji: undefined,
-          pinnedChatIds: [],
-          includeChatIds: [],
-          excludeChatIds: [],
-          contacts: true,
-          nonContacts: true,
-          groups: true,
-          broadcasts: true,
-          bots: true,
+          id: df.id ?? 0,
+          title: toText(df.title) || 'Folder',
+          emoji: toText(df.emoticon) || undefined,
+          pinnedChatIds,
+          includeChatIds,
+          excludeChatIds,
+          contacts: df.contacts ?? false,
+          nonContacts: df.nonContacts ?? false,
+          groups: df.groups ?? false,
+          broadcasts: df.broadcasts ?? false,
+          bots: df.bots ?? false,
         });
-        continue;
       }
-      const df = f as any;
-      out.push({
-        id: df.id ?? 0,
-        title: df.title ?? 'Folder',
-        emoji: df.emoticon ?? undefined,
-        pinnedChatIds: (df.pinnedPeers ?? []).map((p: any) => Number(p.channelId ?? p.chatId ?? p.userId ?? 0)),
-        includeChatIds: (df.includePeers ?? []).map((p: any) => Number(p.channelId ?? p.chatId ?? p.userId ?? 0)),
-        excludeChatIds: (df.excludePeers ?? []).map((p: any) => Number(p.channelId ?? p.chatId ?? p.userId ?? 0)),
-        contacts: df.contacts ?? false,
-        nonContacts: df.nonContacts ?? false,
-        groups: df.groups ?? false,
-        broadcasts: df.broadcasts ?? false,
-        bots: df.bots ?? false,
-      });
+    } catch {
+      /* folders unavailable — the built-in "All" still gives a full chat list */
     }
     return out;
   }

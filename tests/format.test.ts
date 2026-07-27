@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  toText,
   formatTimestamp,
   formatChatTimestamp,
   truncateText,
@@ -12,6 +13,8 @@ import {
   avatarColor,
   filterChatsByFolder,
   folderUnreadCount,
+  withArchiveFolder,
+  ARCHIVE_FOLDER_ID,
   type DisplayMessage,
   type DisplayChat,
   type DisplayFolder,
@@ -19,6 +22,84 @@ import {
 
 // Fixed "now" for deterministic tests: Monday 14 July 2026, 15:30
 const NOW = new Date(2026, 6, 14, 15, 30, 0);
+
+// ---------------------------------------------------------------------------
+// toText — safe coercion of GramJS values into strings
+// ---------------------------------------------------------------------------
+describe('toText', () => {
+  it('passes strings through unchanged', () => {
+    expect(toText('hello')).toBe('hello');
+    expect(toText('')).toBe('');
+  });
+
+  it('returns empty string for null/undefined', () => {
+    expect(toText(null)).toBe('');
+    expect(toText(undefined)).toBe('');
+  });
+
+  it('stringifies numbers and booleans', () => {
+    expect(toText(42)).toBe('42');
+    expect(toText(true)).toBe('true');
+  });
+
+  it('extracts .text from a TextWithEntities-like TLObject', () => {
+    const twe = {
+      CONSTRUCTOR_ID: 1,
+      className: 'TextWithEntities',
+      text: 'folder name',
+      entities: [],
+    };
+    expect(toText(twe)).toBe('folder name');
+  });
+
+  it('extracts .message from a Message-like TLObject', () => {
+    expect(toText({ message: 'hi there', entities: [] })).toBe('hi there');
+  });
+
+  it('extracts .title from an entity-like TLObject', () => {
+    expect(toText({ title: 'My Channel' })).toBe('My Channel');
+  });
+
+  it('prefers .text over .message and .title', () => {
+    expect(toText({ text: 'a', message: 'b', title: 'c' })).toBe('a');
+  });
+
+  it('returns empty string for an opaque object', () => {
+    expect(toText({ foo: 'bar' })).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: TLObjects must never leak through display helpers as objects
+// ---------------------------------------------------------------------------
+describe('display helpers are safe against TLObject input', () => {
+  const twe = { text: 'Work', entities: [] } as unknown as string;
+
+  it('truncateText coerces a TextWithEntities to its text', () => {
+    expect(truncateText(twe, 20)).toBe('Work');
+  });
+
+  it('wrapText coerces a TextWithEntities to its text', () => {
+    expect(wrapText(twe, 20)).toEqual(['Work']);
+  });
+
+  it('getInitials coerces a TextWithEntities to its initials', () => {
+    expect(getInitials(twe)).toBe('WO');
+  });
+
+  it('formatChatPreview coerces a TLObject lastMessageText', () => {
+    const chat = {
+      id: 1,
+      title: 'x',
+      lastMessageText: { text: 'preview', entities: [] } as unknown as string,
+      lastMessageDate: NOW,
+      unreadCount: 0,
+      isChannel: false,
+      isGroup: false,
+    } as DisplayChat;
+    expect(formatChatPreview(chat, 20)).toBe('preview');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // formatTimestamp
@@ -348,6 +429,15 @@ describe('filterChatsByFolder', () => {
     expect(result.map((c) => c.title)).toEqual(['Dev Team']);
   });
 
+  it('non-contacts only includes private users, not groups or channels', () => {
+    const folder: DisplayFolder = {
+      id: 2, title: 'Personal', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+      contacts: true, nonContacts: true, groups: false, broadcasts: false, bots: false,
+    };
+    const result = filterChatsByFolder(chats, folder);
+    expect(result.map((c) => c.title)).toEqual(['Alice', 'Stranger']);
+  });
+
   it('includeChatIds overrides flags', () => {
     const folder: DisplayFolder = {
       id: 2, title: 'Custom', pinnedChatIds: [], includeChatIds: [1, 3], excludeChatIds: [],
@@ -357,6 +447,14 @@ describe('filterChatsByFolder', () => {
     expect(result.map((c) => c.id).sort()).toEqual([1, 3]);
   });
 
+  it('pinnedChatIds are explicit folder members', () => {
+    const folder: DisplayFolder = {
+      id: 3, title: 'Pinned', pinnedChatIds: [3], includeChatIds: [], excludeChatIds: [],
+      contacts: false, nonContacts: false, groups: false, broadcasts: false, bots: false,
+    };
+    expect(filterChatsByFolder(chats, folder).map((c) => c.id)).toEqual([3]);
+  });
+
   it('excludeChatIds removes chats', () => {
     const folder: DisplayFolder = {
       id: 3, title: 'No Bot', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [4],
@@ -364,6 +462,57 @@ describe('filterChatsByFolder', () => {
     };
     const result = filterChatsByFolder(chats, folder);
     expect(result.find((c) => c.id === 4)).toBeUndefined();
+  });
+
+  it('archived chats are hidden from "All" and custom folders', () => {
+    const archivedChat: DisplayChat = { ...chats[0]!, id: 99, title: 'Old', isArchived: true };
+    const list = [...chats, archivedChat];
+    expect(filterChatsByFolder(list, allFolder).find((c) => c.id === 99)).toBeUndefined();
+
+    const custom: DisplayFolder = {
+      id: 4, title: 'Custom', pinnedChatIds: [], includeChatIds: [99], excludeChatIds: [],
+      contacts: true, nonContacts: true, groups: true, broadcasts: true, bots: true,
+    };
+    // Even an explicit include must not pull an archived chat out of the archive.
+    expect(filterChatsByFolder(list, custom).find((c) => c.id === 99)).toBeUndefined();
+  });
+
+  it('Archive folder contains only archived chats', () => {
+    const archivedChat: DisplayChat = { ...chats[0]!, id: 99, title: 'Old', isArchived: true };
+    const archive = withArchiveFolder([], [archivedChat])[0]!;
+    expect(archive.id).toBe(ARCHIVE_FOLDER_ID);
+    const result = filterChatsByFolder([...chats, archivedChat], archive);
+    expect(result.map((c) => c.id)).toEqual([99]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// withArchiveFolder
+// ---------------------------------------------------------------------------
+describe('withArchiveFolder', () => {
+  const allFolder: DisplayFolder = {
+    id: 0, title: 'All', pinnedChatIds: [], includeChatIds: [], excludeChatIds: [],
+    contacts: true, nonContacts: true, groups: true, broadcasts: true, bots: true,
+  };
+  const custom: DisplayFolder = { ...allFolder, id: 1, title: 'Personal' };
+  const archivedChat: DisplayChat = {
+    id: 9, title: 'Old', lastMessageText: '', lastMessageDate: new Date(), unreadCount: 0,
+    isChannel: false, isGroup: false, isArchived: true,
+  };
+
+  it('inserts Archive right after "All" when archived chats exist', () => {
+    const result = withArchiveFolder([allFolder, custom], [archivedChat]);
+    expect(result.map((f) => f.id)).toEqual([0, ARCHIVE_FOLDER_ID, 1]);
+  });
+
+  it('does not add Archive when nothing is archived', () => {
+    const plain: DisplayChat = { ...archivedChat, isArchived: false };
+    expect(withArchiveFolder([allFolder, custom], [plain])).toEqual([allFolder, custom]);
+  });
+
+  it('removes a stale Archive tab once the archive is empty', () => {
+    const withArchive = withArchiveFolder([allFolder, custom], [archivedChat]);
+    expect(withArchiveFolder(withArchive, []).map((f) => f.id)).toEqual([0, 1]);
   });
 });
 

@@ -24,6 +24,8 @@ export interface AppState {
   // Chats
   chats: DisplayChat[];
   selectedChatIndex: number;
+  /** Id of the chat whose messages are shown / will receive sends. */
+  activeChatId: number | null;
   chatsLoading: boolean;
 
   // Messages
@@ -47,6 +49,7 @@ export interface AppState {
   setSelectedFolderIndex: (index: number) => void;
   setChats: (chats: DisplayChat[]) => void;
   setSelectedChatIndex: (index: number) => void;
+  setActiveChatId: (id: number | null) => void;
   setChatsLoading: (loading: boolean) => void;
   setMessages: (messages: DisplayMessage[]) => void;
   setMessagesLoading: (loading: boolean) => void;
@@ -71,6 +74,7 @@ export const appStore = createStore<AppState>((set) => ({
 
   chats: [],
   selectedChatIndex: 0,
+  activeChatId: null,
   chatsLoading: false,
 
   messages: [],
@@ -90,6 +94,7 @@ export const appStore = createStore<AppState>((set) => ({
   setSelectedFolderIndex: (index) => set({ selectedFolderIndex: index }),
   setChats: (chats) => set({ chats }),
   setSelectedChatIndex: (index) => set({ selectedChatIndex: index }),
+  setActiveChatId: (id) => set({ activeChatId: id }),
   setChatsLoading: (loading) => set({ chatsLoading: loading }),
   setMessages: (messages) => set({ messages }),
   setMessagesLoading: (loading) => set({ messagesLoading: loading }),

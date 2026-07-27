@@ -14,6 +14,7 @@ interface AuthScreenProps {
 export function AuthScreen({ onSendCode, onSignIn, onPassword }: AuthScreenProps) {
   const authPhase = useAppStore((s) => s.authPhase);
   const authError = useAppStore((s) => s.authError);
+  const statusMessage = useAppStore((s) => s.statusMessage);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -100,9 +101,9 @@ export function AuthScreen({ onSendCode, onSignIn, onPassword }: AuthScreenProps
         </Text>
       </Box>
 
-      {busy && (
+      {(busy || statusMessage) && (
         <Box marginTop={1}>
-          <Text color="yellow">⏳ Working…</Text>
+          <Text color="yellow">⏳ {statusMessage ?? 'Working…'}</Text>
         </Box>
       )}
 
