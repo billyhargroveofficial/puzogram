@@ -2,10 +2,9 @@
 /**
  * Screenshot demo — renders the real <App> with 100% fake fixture data.
  *
- * Usage: npx tsx scripts/demo.tsx <scene>
+ * Usage: npm run demo -- <scene>
  * Scenes: 1 = main view, 2 = Personal folder + typed draft, 3 = Archive tab.
- * Run inside a PTY with a fixed size (see scripts/shoot.sh), e.g.:
- *   script -qfec "stty cols 122 rows 38; npx tsx scripts/demo.tsx 1" cap.ansi
+ * The app stays open like the real client — quit with Ctrl+C.
  */
 import React from 'react';
 import { render } from 'ink';
@@ -146,6 +145,3 @@ render(
   </MouseProvider>,
   { alternateScreen: true },
 );
-
-// Hold the frame long enough for the PTY capture, then exit.
-setTimeout(() => process.exit(0), 2500);
